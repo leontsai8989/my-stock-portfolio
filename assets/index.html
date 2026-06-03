@@ -18,6 +18,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@700&display=swap"
         rel="stylesheet">
@@ -360,43 +366,35 @@
             <div v-if="currentView === 'backup'" class="flex-1 overflow-y-auto custom-scrollbar pt-4">
                 <div class="max-w-2xl mx-auto flex flex-col gap-6">
                     <div class="glass rounded-3xl p-8 shadow-2xl">
-                        <h2 class="text-xl font-900 text-slate-800 mb-2">雲端同步設定</h2>
-                        <p class="text-xs text-slate-500 font-bold mb-6">綁定 GitHub Gist 以實現跨裝置自動同步。您的資料將加密儲存在您的私人 Gist
-                            中。</p>
+                        <h2 class="text-xl font-900 text-slate-800 mb-2">雲端同步設定 (Firebase)</h2>
+                        <p class="text-xs text-slate-500 font-bold mb-6">登入 Google 帳號，以實現跨裝置自動同步。您的資料將加密儲存在您的專屬雲端空間中。</p>
 
                         <div class="space-y-4">
-                            <div>
-                                <label
-                                    class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">GitHub
-                                    Personal Access Token</label>
-                                <div class="relative">
-                                    <input v-model="githubToken" :type="showToken ? 'text' : 'password'"
-                                        class="w-full bg-slate-100 border-0 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 ring-indigo-500 transition-all pr-12"
-                                        placeholder="ghp_xxxxxxxxxxxx">
-                                    <button @click="showToken = !showToken"
-                                        class="absolute right-4 top-3 text-slate-400 hover:text-indigo-600 transition-colors">
-                                        <i class="fa-solid" :class="showToken ? 'fa-eye-slash' : 'fa-eye'"></i>
+                            <div v-if="!currentUser" class="text-center">
+                                <button @click="loginWithGoogle" class="w-full bg-slate-800 text-white hover:bg-slate-700 py-3 rounded-xl text-sm font-black flex items-center justify-center transition-colors">
+                                    <i class="fa-brands fa-google mr-2 text-red-400"></i>使用 Google 登入
+                                </button>
+                            </div>
+                            <div v-else class="space-y-4">
+                                <div class="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                    <div class="flex items-center">
+                                        <img :src="currentUser.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png'" class="w-10 h-10 rounded-full mr-3 border border-slate-300">
+                                        <div>
+                                            <p class="text-sm font-bold text-slate-800">{{ currentUser.displayName || '使用者' }}</p>
+                                            <p class="text-[10px] text-emerald-600 font-black tracking-widest mt-0.5">● 雲端自動同步中</p>
+                                        </div>
+                                    </div>
+                                    <button @click="logout" class="text-xs text-slate-500 hover:text-rose-500 font-bold underline">登出</button>
+                                </div>
+                                <div class="flex flex-col sm:flex-row items-center gap-4 pt-4">
+                                    <button @click="uploadToFirebase(false)" class="w-full sm:flex-1 bg-indigo-600 text-white py-3 rounded-xl text-xs font-black shadow-lg shadow-indigo-500/20 hover:scale-105 transition-transform">
+                                        <i class="fa-solid fa-cloud-arrow-up mr-2"></i>強制上傳備份
+                                    </button>
+                                    <button @click="downloadFromFirebase(false)" class="w-full sm:flex-1 bg-emerald-600 text-white py-3 rounded-xl text-xs font-black shadow-lg shadow-emerald-500/20 hover:scale-105 transition-transform">
+                                        <i class="fa-solid fa-cloud-arrow-down mr-2"></i>強制下載同步
                                     </button>
                                 </div>
-                                <a href="https://github.com/settings/tokens" target="_blank"
-                                    class="text-[10px] font-black text-indigo-500 mt-2 inline-block">點此申請 (需勾選 gist
-                                    權限)</a>
                             </div>
-                            <div>
-                                <label
-                                    class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Gist
-                                    ID / 記事本網址 (可直接貼上網址、Script 或 ID)</label>
-                                <input v-model="gistId" type="text"
-                                    class="w-full bg-slate-100 border-0 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 ring-indigo-500 transition-all"
-                                    placeholder="直接貼上 Gist 網址、Script 標籤或 ID...">
-                            </div>
-                            <div class="flex flex-col sm:flex-row items-center gap-4 pt-4">
-                                <button @click="saveGithubSettings"
-                                    class="w-full sm:flex-1 bg-slate-800 text-white py-3 rounded-xl text-xs font-black hover:bg-slate-700 transition-all">儲存設定</button>
-                                <button @click="uploadToGist()"
-                                    class="w-full sm:flex-1 bg-indigo-600 text-white py-3 rounded-xl text-xs font-black shadow-lg shadow-indigo-500/20 hover:scale-105 transition-transform">手動上傳備份</button>
-                                <button @click="downloadFromGist()"
-                                    class="w-full sm:flex-1 bg-emerald-600 text-white py-3 rounded-xl text-xs font-black shadow-lg shadow-emerald-500/20 hover:scale-105 transition-transform">手動下載同步</button>
                             </div>
                         </div>
 
@@ -443,6 +441,20 @@
     </div>
 
     <script>
+        // --- Firebase 雲端同步邏輯 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBSQuMca0U3aoDy-a7m_Rcm6KBv39gRHO8",
+            authDomain: "stock-plan-8b37f.firebaseapp.com",
+            projectId: "stock-plan-8b37f",
+            storageBucket: "stock-plan-8b37f.firebasestorage.app",
+            messagingSenderId: "8442333021",
+            appId: "1:8442333021:web:ee5e204994c1c520930ab4"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const fbProvider = new firebase.auth.GoogleAuthProvider();
+
         const { createApp } = Vue;
         const DateTime = luxon.DateTime;
 
@@ -484,10 +496,8 @@
                     bankAccounts: safeBankAccounts,
                     history: JSON.parse(localStorage.getItem('f_history')) || [],
                     accountForm: { name: '', balance: null, type: 'asset' },
-                    githubToken: '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',
-                    gistId: 'b33d5718d60142d3e36dac0ee479f1e7',
-                    token: safeApiToken || 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0xNCAwOToyODo0OSIsInVzZXJfaWQiOiJsZW9udHNhaTg5ODkiLCJlbWFpbCI6InRvYnl0c2FpODkyNkBnbWFpbC5jb20iLCJpcCI6IjIxMC41OS4xNjUuMTYzIn0.yiY12G1Wi2V9fCZiwrpLVWYF6L1PrG8ENUtF7e_7XrU',
-                    showToken: false,
+                    currentUser: null,
+                    unsubscribeSnapshot: null,
                     isAutoSync: true,
                     autoSyncTimer: null,
                     indices: {},
@@ -508,10 +518,42 @@
                         .then(() => console.log('Service Worker Registered'));
                 }
 
-                // 2. Auto Download on startup if settings exist
-                if (this.githubToken && this.gistId) {
-                    await this.downloadFromGist(true);
-                }
+                // 2. Firebase Auth & Realtime Sync
+                auth.onAuthStateChanged(user => {
+                    if (user) {
+                        this.currentUser = user;
+                        this.downloadFromFirebase(true);
+                        
+                        if (this.unsubscribeSnapshot) this.unsubscribeSnapshot();
+                        this.unsubscribeSnapshot = db.collection('users').doc(user.uid).onSnapshot(doc => {
+                            if (doc.exists && doc.data().assets) {
+                                // Background sync logic here
+                                // Avoid overwriting if we are actively editing, but for now we just sync
+                                const master = doc.data();
+                                if (master.assets && master.assets.updatedAt) {
+                                    // simple update
+                                    const remoteTime = new Date(master.assets.updatedAt).getTime();
+                                    const localTime = new Date(this.lastSyncTime || 0).getTime();
+                                    if (remoteTime > localTime) {
+                                        this.bankAccounts = master.assets.bankAccounts || [];
+                                        this.history = master.assets.history || [];
+                                        this.lastSyncTime = master.assets.updatedAt;
+                                        // Save locally without triggering upload
+                                        localStorage.setItem('f_banks', JSON.stringify(this.bankAccounts));
+                                        localStorage.setItem('f_history', JSON.stringify(this.history));
+                                        if (this.currentView === 'deposits') this.updateChart();
+                                    }
+                                }
+                            }
+                        });
+                    } else {
+                        this.currentUser = null;
+                        if (this.unsubscribeSnapshot) {
+                            this.unsubscribeSnapshot();
+                            this.unsubscribeSnapshot = null;
+                        }
+                    }
+                });
 
                 // 3. Initialize asset data
                 this.stocks.forEach(s => this.fetchStockInfo(s));
@@ -519,9 +561,6 @@
                 // 4. Set interval for price refresh
                 setInterval(() => {
                     this.stocks.forEach(s => this.fetchStockInfo(s));
-                    if (this.githubToken && this.gistId) {
-                        this.downloadFromGist(true);
-                    }
                 }, 60000);
 
                 this.$nextTick(() => {
@@ -580,24 +619,28 @@
                 debouncedUpload() {
                     if (this.autoSyncTimer) clearTimeout(this.autoSyncTimer);
                     this.autoSyncTimer = setTimeout(() => {
-                        this.uploadToGist(true);
+                        this.uploadToFirebase(true);
                     }, 3000);
                 },
 
-                async uploadToGist(silent = false) {
-                    const token = this.githubToken ? this.githubToken.trim() : '';
-                    let gistId = this.gistId ? this.gistId.trim() : '';
+                loginWithGoogle() {
+                    auth.signInWithPopup(fbProvider).catch(err => {
+                        console.error(err);
+                        alert('登入失敗');
+                    });
+                },
 
-                    const idMatch = gistId.match(/([a-f0-9]{20,32})/i);
-                    if (idMatch) {
-                        gistId = idMatch[1];
-                        this.gistId = gistId;
-                    }
+                logout() {
+                    auth.signOut();
+                    alert('已登出');
+                },
 
-                    if (!token) return silent ? null : alert('請先輸入 GitHub Token');
+                async uploadToFirebase(silent = false) {
+                    if (!this.currentUser) return silent ? null : alert('請先登入 Google 帳號');
 
                     this.isSyncing = true;
                     this.syncStatus = silent ? 'Auto Sync...' : '上傳中...';
+                    this.lastSyncTime = new Date().toISOString();
 
                     const content = {
                         stocks: this.stocks,
@@ -606,116 +649,55 @@
                         history: this.history,
                         cash: this.cash,
                         reconcile: this.reconcileForm,
-                        updatedAt: new Date().toISOString()
+                        updatedAt: this.lastSyncTime
                     };
 
                     try {
-                        // 1. 先抓取目前雲端的完整資料 (避免覆蓋股票數據)
-                        let currentGist = {};
-                        if (gistId) {
-                            const getRes = await fetch(`https://api.github.com/gists/${gistId}`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            });
-                            if (getRes.ok) {
-                                const gistData = await getRes.json();
-                                if (gistData.files['family_master_data.json']) {
-                                    currentGist = JSON.parse(gistData.files['family_master_data.json'].content);
-                                }
-                            }
-                        }
+                        await db.collection('users').doc(this.currentUser.uid).set({
+                            assets: content
+                        }, { merge: true });
 
-                        // 2. 將資產資料併入主檔案
-                        currentGist.assets = content;
-
-                        const payload = {
-                            description: "Family Master Portfolio",
-                            public: false,
-                            files: {
-                                "family_master_data.json": { content: JSON.stringify(currentGist, null, 2) }
-                            }
-                        };
-
-                        let url = 'https://api.github.com/gists';
-                        let method = 'POST';
-                        if (gistId) { url += `/${gistId}`; method = 'PATCH'; }
-
-                        const res = await fetch(url, {
-                            method: method,
-                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-
-                        if (res.ok) {
-                            const data = await res.json();
-                            this.gistId = data.id;
-                            localStorage.setItem('f_gist_id', this.gistId);
-                            localStorage.setItem('f_gh_token', token);
-                            this.syncStatus = '同步成功';
-                        } else { throw new Error('Fail'); }
+                        this.syncStatus = '同步成功';
                     } catch (e) {
+                        console.error(e);
                         this.syncStatus = '同步失敗';
-                        if (!silent) alert('上傳失敗，請檢查 Token 權限');
+                        if (!silent) alert('上傳失敗');
                     } finally {
                         this.isSyncing = false;
                         setTimeout(() => this.syncStatus = '', 3000);
                     }
                 },
 
-                async downloadFromGist(silent = false) {
-                    const token = this.githubToken ? this.githubToken.trim() : '';
-                    let gistId = this.gistId ? this.gistId.trim() : '';
-
-                    const idMatch = gistId.match(/([a-f0-9]{20,32})/i);
-                    if (idMatch) {
-                        gistId = idMatch[1];
-                        this.gistId = gistId;
-                    }
-
-                    if (!token || !gistId) return;
+                async downloadFromFirebase(silent = false) {
+                    if (!this.currentUser) return;
                     this.isSyncing = true;
                     this.syncStatus = '下載中...';
 
                     try {
-                        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-
-                        if (res.ok) {
-                            const data = await res.json();
-
-                            if (data.files['family_master_data.json']) {
-                                const master = JSON.parse(data.files['family_master_data.json'].content);
-
-                                // 處理資產部分
-                                if (master.assets) {
-                                    const proceed = silent ? true : confirm(`發現雲端備份 (${master.assets.updatedAt || '未知時間'})\n是否要覆蓋本地資料？`);
-                                    if (proceed) {
-                                        this.bankAccounts = master.assets.bankAccounts || [];
-                                        this.history = master.assets.history || [];
-                                        this.saveData();
-                                        this.syncStatus = '還原成功';
-                                    }
+                        const doc = await db.collection('users').doc(this.currentUser.uid).get();
+                        
+                        if (doc.exists) {
+                            const master = doc.data();
+                            if (master.assets) {
+                                const proceed = silent ? true : confirm(`發現雲端備份 (${master.assets.updatedAt || '未知時間'})\n是否要覆蓋本地資料？`);
+                                if (proceed) {
+                                    this.bankAccounts = master.assets.bankAccounts || [];
+                                    this.history = master.assets.history || [];
+                                    this.lastSyncTime = master.assets.updatedAt;
+                                    this.saveData();
+                                    this.syncStatus = '還原成功';
                                 }
                             }
+                        } else {
+                            this.syncStatus = '雲端無資料';
                         }
                     } catch (e) {
+                        console.error(e);
                         this.syncStatus = '下載失敗';
                     } finally {
                         this.isSyncing = false;
                         setTimeout(() => this.syncStatus = '', 3000);
                     }
-                },
-
-                saveGithubSettings() {
-                    let gistId = this.gistId ? this.gistId.trim() : '';
-                    const idMatch = gistId.match(/([a-f0-9]{20,32})/i);
-                    if (idMatch) {
-                        gistId = idMatch[1];
-                        this.gistId = gistId;
-                    }
-                    localStorage.setItem('f_gh_token', this.githubToken);
-                    localStorage.setItem('f_gist_id', this.gistId);
-                    alert('設定已儲存');
                 },
 
                 // =============== [Market & Data Logic] ===============

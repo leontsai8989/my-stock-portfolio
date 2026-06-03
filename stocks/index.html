@@ -10,7 +10,7 @@
     <!-- 引入 FontAwesome 圖示 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- PWA Manifest 與 Service Worker (加入協定檢查以避免 Blob 預覽環境報錯) -->
+    <!-- PWA Manifest 與 Service Worker -->
     <link rel="manifest" href="../manifest.json">
     <script>
         if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
@@ -19,6 +19,11 @@
             });
         }
     </script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         /* 自訂顏色：台股紅漲綠跌 */
         .text-up {
@@ -301,42 +306,39 @@
                         </form>
                     </div>
 
-                    <!-- GitHub 雲端同步與備份 -->
+                    <!-- Firebase 雲端同步與備份 -->
                     <div class="bg-slate-900 rounded-2xl shadow-sm p-4 sm:p-6 text-white">
                         <h3 class="font-bold mb-4 flex items-center text-base sm:text-lg">
-                            <i class="fa-brands fa-github mr-2"></i>
-                            <span>雲端同步備份 (Gist)</span>
+                            <i class="fa-solid fa-cloud mr-2"></i>
+                            <span>雲端同步備份 (Firebase)</span>
                         </h3>
-                        <div class="space-y-3">
-                            <label
-                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">GitHub
-                                Token</label>
-                            <div class="relative mb-2">
-                                <input type="password" id="gist-token" placeholder="ghp_..."
-                                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 pr-10">
-                                <button type="button" onclick="toggleTokenVisibility('gist-token')"
-                                    class="absolute right-2 top-1.5 text-slate-500 hover:text-slate-300">
-                                    <i class="fa-solid fa-eye"></i>
+                        <div class="space-y-4">
+                            <div id="fb-unauth" class="text-center">
+                                <p class="text-xs text-slate-400 mb-3">登入 Google 帳號，即可在手機與電腦間自動同步您的記帳資料。</p>
+                                <button onclick="loginWithGoogle()" class="w-full bg-white text-slate-800 hover:bg-slate-100 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-colors">
+                                    <i class="fa-brands fa-google mr-2 text-red-500"></i>使用 Google 登入
                                 </button>
                             </div>
-
-                            <label
-                                class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Gist
-                                ID / 記事本網址 (可直接貼上網址、Script 標籤或 ID)</label>
-                            <input type="text" id="gist-id" placeholder="貼上網址、Script 標籤或 ID..."
-                                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500">
-
-                            <div class="grid grid-cols-2 gap-2">
-                                <button onclick="handleCloudUpload()"
-                                    class="bg-indigo-600 hover:bg-indigo-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center">
-                                    <i class="fa-solid fa-cloud-arrow-up mr-2"></i>上傳雲端
-                                </button>
-                                <button onclick="handleCloudDownload()"
-                                    class="bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-sm font-bold flex items-center justify-center">
-                                    <i class="fa-solid fa-cloud-arrow-down mr-2"></i>從雲端下載
-                                </button>
+                            <div id="fb-auth" class="hidden">
+                                <div class="flex items-center justify-between mb-3 bg-slate-800 p-3 rounded-lg">
+                                    <div class="flex items-center">
+                                        <img id="fb-user-photo" src="" class="w-8 h-8 rounded-full mr-3 border border-slate-600">
+                                        <div>
+                                            <p id="fb-user-name" class="text-sm font-bold"></p>
+                                            <p class="text-[10px] text-emerald-400">● 雲端自動同步中</p>
+                                        </div>
+                                    </div>
+                                    <button onclick="logout()" class="text-xs text-slate-400 hover:text-white underline">登出</button>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="handleCloudUpload(false)" class="bg-indigo-600 hover:bg-indigo-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center">
+                                        <i class="fa-solid fa-cloud-arrow-up mr-2"></i>強制上傳
+                                    </button>
+                                    <button onclick="handleCloudDownload(false)" class="bg-slate-700 hover:bg-slate-600 py-2 rounded-lg text-sm font-bold flex items-center justify-center">
+                                        <i class="fa-solid fa-cloud-arrow-down mr-2"></i>強制下載
+                                    </button>
+                                </div>
                             </div>
-                            <!-- 使用此元素代替 alert，展示給使用者同步狀態 -->
                             <p id="sync-status" class="text-xs text-slate-300 text-center font-medium bg-slate-800 py-1 rounded hidden"></p>
                         </div>
                     </div>
@@ -761,121 +763,92 @@
             document.getElementById(id).addEventListener('input', calculateSimulation);
         });
 
-        // --- 雲端同步邏輯 ---
-        async function handleCloudUpload(isAuto = false) {
-            const token = document.getElementById('gist-token').value.trim();
-            let gistId = document.getElementById('gist-id').value.trim();
+        // --- Firebase 雲端同步邏輯 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBSQuMca0U3aoDy-a7m_Rcm6KBv39gRHO8",
+            authDomain: "stock-plan-8b37f.firebaseapp.com",
+            projectId: "stock-plan-8b37f",
+            storageBucket: "stock-plan-8b37f.firebasestorage.app",
+            messagingSenderId: "8442333021",
+            appId: "1:8442333021:web:ee5e204994c1c520930ab4"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const provider = new firebase.auth.GoogleAuthProvider();
 
-            // 自動從各種格式提取 ID (支援網址, <script> 標籤, .js 後綴等)
-            const idMatch = gistId.match(/([a-f0-9]{20,32})/i);
-            if (idMatch) {
-                gistId = idMatch[1];
-                document.getElementById('gist-id').value = gistId;
-            }
+        let currentUser = null;
+        let unsubscribeSnapshot = null;
 
-            if (!token) {
-                if (!isAuto) showMessage('請先輸入 GitHub Token');
-                return null;
-            }
-
-            localStorage.setItem('f_gh_token', token);
-            if (!isAuto) showMessage('正在同步至雲端...');
-
-            try {
-                // 1. 先抓取目前雲端的完整資料 (避免覆蓋資產數據)
-                let currentGist = {};
-                if (gistId) {
-                    const getRes = await fetch(`https://api.github.com/gists/${gistId}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (getRes.ok) {
-                        const gistData = await getRes.json();
-                        if (gistData.files['family_master_data.json']) {
-                            currentGist = JSON.parse(gistData.files['family_master_data.json'].content);
-                        }
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('fb-unauth').classList.add('hidden');
+                document.getElementById('fb-auth').classList.remove('hidden');
+                document.getElementById('fb-user-name').innerText = user.displayName || '使用者';
+                document.getElementById('fb-user-photo').src = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+                
+                // 登入後自動下載並開啟即時監聽
+                handleCloudDownload();
+                if (unsubscribeSnapshot) unsubscribeSnapshot();
+                unsubscribeSnapshot = db.collection('users').doc(user.uid).onSnapshot(doc => {
+                    if (doc.exists && doc.data().stocks) {
+                        // 當雲端更新且不是自己剛剛上傳的，才更新本地
+                        state.transactions = doc.data().stocks;
+                        render();
+                        showMessage('已自動同步最新資料');
                     }
-                }
-
-                // 2. 將股票資料併入主檔案，並清除雲端的 stockSummary 屬性
-                currentGist.stocks = state.transactions;
-                if ('stockSummary' in currentGist) {
-                    delete currentGist.stockSummary;
-                }
-
-                const payload = {
-                    description: "Family Master Portfolio",
-                    public: false,
-                    files: {
-                        "family_master_data.json": { content: JSON.stringify(currentGist, null, 2) }
-                    }
-                };
-
-                let url = 'https://api.github.com/gists';
-                let method = 'POST';
-                if (gistId) {
-                    url += `/${gistId}`;
-                    method = 'PATCH';
-                }
-
-                const res = await fetch(url, {
-                    method: method,
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
                 });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (method === 'POST') {
-                        document.getElementById('gist-id').value = data.id;
-                        localStorage.setItem('f_gist_id', data.id);
-                    }
-                    showMessage(`最後同步: ${new Date().toLocaleTimeString()}`);
-                } else {
-                    showMessage('同步失敗，請檢查 Token 權限');
+            } else {
+                currentUser = null;
+                document.getElementById('fb-unauth').classList.remove('hidden');
+                document.getElementById('fb-auth').classList.add('hidden');
+                if (unsubscribeSnapshot) {
+                    unsubscribeSnapshot();
+                    unsubscribeSnapshot = null;
                 }
+            }
+        });
+
+        function loginWithGoogle() {
+            auth.signInWithPopup(provider).catch(err => {
+                console.error(err);
+                showMessage('登入失敗');
+            });
+        }
+
+        function logout() {
+            auth.signOut();
+            showMessage('已登出');
+        }
+
+        async function handleCloudUpload(isAuto = false) {
+            if (!currentUser) return;
+            if (!isAuto) showMessage('正在同步至雲端...');
+            try {
+                await db.collection('users').doc(currentUser.uid).set({
+                    stocks: state.transactions,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                if (!isAuto) showMessage(`最後同步: ${new Date().toLocaleTimeString()}`);
             } catch (e) {
-                showMessage('網路異常');
+                console.error(e);
+                showMessage('上傳失敗');
             }
         }
 
-        async function handleCloudDownload() {
-            const token = document.getElementById('gist-token').value.trim();
-            let gistId = document.getElementById('gist-id').value.trim();
-
-            const idMatch = gistId.match(/([a-f0-9]{20,32})/i);
-            if (idMatch) {
-                gistId = idMatch[1];
-                document.getElementById('gist-id').value = gistId;
-            }
-
-            if (!token || !gistId) {
-                showMessage('請先輸入 Token 與 ID');
-                return;
-            }
-
-            showMessage('正在從雲端抓取數據...');
-
+        async function handleCloudDownload(isAuto = false) {
+            if (!currentUser) return;
+            if (!isAuto) showMessage('正在從雲端抓取數據...');
             try {
-                const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.files['family_master_data.json']) {
-                        const master = JSON.parse(data.files['family_master_data.json'].content);
-                        if (master.stocks) {
-                            state.transactions = master.stocks;
-                            render();
-                            showMessage('下載成功！');
-                        }
-                    }
-                } else {
-                    showMessage('下載失敗');
+                const doc = await db.collection('users').doc(currentUser.uid).get();
+                if (doc.exists && doc.data().stocks) {
+                    state.transactions = doc.data().stocks;
+                    render();
+                    if (!isAuto) showMessage('下載成功！');
                 }
             } catch (e) {
+                console.error(e);
                 showMessage('網路異常');
             }
         }
@@ -883,11 +856,6 @@
         // 初始化啟動
         loadData();
         fetchStockPrice();
-
-        function toggleTokenVisibility(id) {
-            const el = document.getElementById(id);
-            el.type = el.type === 'password' ? 'text' : 'password';
-        }
     </script>
 </body>
 
